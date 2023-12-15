@@ -9,7 +9,7 @@ def setup(hass, config):
         'SESSION_KEY': config[DOMAIN]['SESSION_KEY'],
         'media_players': config[DOMAIN]['media_players'],
         # 1 is the default value
-        'scrobble_percentage': config[DOMAIN].get('scrobble_pourcentage', 1)
+        'scrobble_percentage': config[DOMAIN].get('scrobble_percentage', 1)
     }
 
     # Forward the setup to the media_player platform
