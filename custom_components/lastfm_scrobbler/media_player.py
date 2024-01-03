@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import logging
 import pylast
 from homeassistant.components.media_player import MediaPlayerEntity
-from homeassistant.const import STATE_PLAYING
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_PLAYING
 from . import DOMAIN  # Import DOMAIN from __init__.py
 
 
@@ -35,6 +35,7 @@ class LastFMScrobblerMediaPlayer(MediaPlayerEntity):
         self._media_title = None
         self._media_artist = None
         self._last_scrobbled_track = None
+        self._last_now_playing_track = None
         self._lastfm_network = lastfm_network
         self._media_players = media_players
         self._scrobble_percentage = scrobble_percentage
@@ -65,8 +66,10 @@ class LastFMScrobblerMediaPlayer(MediaPlayerEntity):
     def calculate_current_position(self, player):
         """Calculate the current media position."""
         last_updated_at = player.attributes.get("media_position_updated_at")
-        _LOGGER.debug(f"Last updated at: {last_updated_at}")
-        if isinstance(last_updated_at, datetime):
+        if last_updated_at is None:
+            return player.attributes.get("media_position", 0)
+        else:
+            _LOGGER.debug(f"Last updated at: {last_updated_at}")
             try:
                 elapsed_time = datetime.now(last_updated_at.tzinfo) - last_updated_at
                 return (
@@ -76,28 +79,15 @@ class LastFMScrobblerMediaPlayer(MediaPlayerEntity):
             except Exception as e:
                 _LOGGER.error(f"Error calculating elapsed time: {e}")
                 return player.attributes.get("media_position", 0)
-        elif isinstance(last_updated_at, (int, float)):  # assuming it's a timestamp
-            try:
-                last_updated_at_datetime = datetime.utcfromtimestamp(last_updated_at)
-                elapsed_time = datetime.utcnow() - last_updated_at_datetime
-                return (
-                    player.attributes.get("media_position", 0)
-                    + elapsed_time.total_seconds()
-                )
-            except Exception as e:
-                _LOGGER.error(f"Error converting timestamp to datetime: {e}")
-                return player.attributes.get("media_position", 0)
-        else:
-            _LOGGER.error(
-                f"Unexpected type for last_updated_at: {type(last_updated_at)}"
-            )
-            return player.attributes.get("media_position", 0)
 
     def update(self):
         """Update the media player entity state."""
         for player_entity_id in self._media_players:
             player = self.hass.states.get(player_entity_id)
-            if player is not None and player.state == STATE_PLAYING:
+            if player is None or player.state != STATE_PLAYING:
+                self._state = STATE_OFF
+            else:
+                self._state = STATE_ON
                 self._media_artist = player.attributes.get("media_artist")
                 self._media_title = player.attributes.get("media_title")
                 media_duration = player.attributes.get("media_duration")
