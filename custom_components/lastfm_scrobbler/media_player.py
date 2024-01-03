@@ -32,19 +32,15 @@ class LastFMScrobblerMediaPlayer(MediaPlayerEntity):
     def __init__(self, lastfm_network, media_players, scrobble_percentage):
         """Initialize the media player entity."""
         self._state = None
-        self._current_track = None
-        self._artist = None
-        self._album = None
+        self._media_title = None
+        self._media_artist = None
         self._last_scrobbled_track = None
         self._lastfm_network = lastfm_network
         self._media_players = media_players
         self._scrobble_percentage = scrobble_percentage
 
-    def scrobble(self, artist, title, album):
+    def scrobble(self, artist, title):
         """Scrobble the current playing track to Last.fm."""
-        if self._last_scrobbled_track == (artist, title, album):
-            _LOGGER.info(f"Already scrobbled {title} by {artist}, skipping.")
-            return
 
         # Obtain the current UNIX timestamp for the scrobble
         timestamp = int(time.time())
@@ -52,13 +48,19 @@ class LastFMScrobblerMediaPlayer(MediaPlayerEntity):
         try:
             # Attempt to scrobble the track to Last.fm
             self._lastfm_network.scrobble(
-                artist=artist, title=title, album=album, timestamp=timestamp
+                artist=artist, title=title, timestamp=timestamp
             )
             _LOGGER.info(f"Successfully scrobbled {title} by {artist}")
-            self._last_scrobbled_track = (artist, title, album)
         except pylast.WSError as ex:
             # Log any error encountered during the scrobble attempt
             _LOGGER.error(f"Failed to scrobble {title} by {artist}: {ex}")
+
+    def update_now_playing(self, artist, title):
+        try:
+            self._lastfm_network.update_now_playing(artist=artist, title=title)
+            _LOGGER.info(f"Successful update_now_playing {title} by {artist}")
+        except pylast.WSError as ex:
+            _LOGGER.error(f"Failed to update_now_playing {title} by {artist}: {ex}")
 
     def calculate_current_position(self, player):
         """Calculate the current media position."""
@@ -96,9 +98,8 @@ class LastFMScrobblerMediaPlayer(MediaPlayerEntity):
         for player_entity_id in self._media_players:
             player = self.hass.states.get(player_entity_id)
             if player is not None and player.state == STATE_PLAYING:
-                self._artist = player.attributes.get("media_artist")
-                self._current_track = player.attributes.get("media_title")
-                self._album = player.attributes.get("media_album_name")
+                self._media_artist = player.attributes.get("media_artist")
+                self._media_title = player.attributes.get("media_title")
                 media_duration = player.attributes.get("media_duration")
                 media_position = self.calculate_current_position(
                     player
@@ -119,17 +120,37 @@ class LastFMScrobblerMediaPlayer(MediaPlayerEntity):
                         f"Checking player {player_entity_id} at {media_position}/{media_duration} ({playback_percentage}%)"
                     )
 
-                    if playback_percentage >= self._scrobble_percentage:
+                    if self._last_now_playing_track != (
+                        self._media_artist,
+                        self._media_title,
+                    ):
+                        self.update_now_playing(
+                            self._media_artist,
+                            self._media_title,
+                        )
+                        self._last_now_playing_track = (
+                            self._media_artist,
+                            self._media_title,
+                        )
+
+                    # If the track has changed since the last scrobble, scrobble it
+                    if (
+                        self._last_scrobbled_track
+                        != (
+                            self._media_artist,
+                            self._media_title,
+                        )
+                        and playback_percentage >= self._scrobble_percentage
+                    ):
                         # If at least 5% of the song has been played, scrobble it
-                        if self._last_scrobbled_track != (
-                            self._artist,
-                            self._current_track,
-                            self._album,
-                        ):
-                            # If the track has changed since the last scrobble, scrobble it
-                            self.scrobble(
-                                self._artist, self._current_track, self._album
-                            )
+                        self.scrobble(
+                            self._media_artist,
+                            self._media_title,
+                        )
+                        self._last_scrobbled_track = (
+                            self._media_artist,
+                            self._media_title,
+                        )
 
     @property
     def name(self):
@@ -144,14 +165,9 @@ class LastFMScrobblerMediaPlayer(MediaPlayerEntity):
     @property
     def media_title(self):
         """Return the title of the currently playing media."""
-        return self._current_track
+        return self._media_title
 
     @property
     def media_artist(self):
         """Return the artist of the currently playing media."""
-        return self._artist
-
-    @property
-    def media_album_name(self):
-        """Return the album name of the currently playing media."""
-        return self._album
+        return self._media_artist
