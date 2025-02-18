@@ -1,2 +1,2 @@
-homeassistant==2023.12.3
+homeassistant==2024.1.6
 pylast==5.2.0
